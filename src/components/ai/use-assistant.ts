@@ -12,6 +12,13 @@ export type ChatQuota = { used: number; limit: number; remaining: number };
 
 export type AssistantLocale = "en" | "ru" | "kk";
 
+/**
+ * The API accepts 1–12 messages (`aiChatSchema`). Without trimming, the seventh
+ * question in a single conversation produced 13 messages and the request was
+ * rejected before it ever reached the model.
+ */
+const HISTORY_LIMIT = 12;
+
 type SendOptions = {
   mode?: "assistant" | "itinerary" | "budget_analysis" | "recommendations";
   tripId?: string | null;
@@ -49,7 +56,9 @@ export function useAssistant(initialQuota?: ChatQuota | null) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: nextMessages.map(({ role, content: text }) => ({ role, content: text })),
+          messages: nextMessages
+            .slice(-HISTORY_LIMIT)
+            .map(({ role, content: text }) => ({ role, content: text })),
           mode: options.mode ?? "assistant",
           ...(options.locale ? { locale: options.locale } : {}),
           ...(options.tripId ? { tripId: options.tripId } : {}),

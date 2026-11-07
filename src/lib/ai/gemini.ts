@@ -1,6 +1,6 @@
 import "server-only";
 
-import { ApiError, GoogleGenAI } from "@google/genai";
+import { ApiError, FinishReason, GoogleGenAI, ThinkingLevel } from "@google/genai";
 
 import { geminiApiKey, geminiModel, usesLegacyKeyVariable } from "@/lib/env.server";
 
@@ -47,6 +47,23 @@ const FALLBACK_MODELS = ["gemini-3.5-flash", "gemini-3.6-flash"];
 const REQUEST_TIMEOUT_MS = 40_000;
 const ATTEMPTS_PER_MODEL = 2;
 const RETRY_BASE_DELAY_MS = 600;
+
+/**
+ * Gemini 3 models count thinking tokens against maxOutputTokens, so a small
+ * budget stops generation mid-sentence while the visible answer is still short.
+ * The first attempt gets a comfortable budget; the retry doubles it in case a
+ * long itinerary answer plus thinking still does not fit.
+ */
+const MAX_OUTPUT_TOKENS = 4096;
+const MAX_OUTPUT_TOKENS_RETRY = 8192;
+
+/**
+ * `thinkingLevel` only exists on Gemini 3 and newer. Older models reject the
+ * field with HTTP 400, so it is sent only where the API accepts it.
+ */
+function supportsThinkingLevel(model: string): boolean {
+  return /^gemini-[3-9]/.test(model);
+}
 
 let client: GoogleGenAI | null = null;
 /** Remembered once a model answers, so later calls skip retired model names. */
@@ -164,6 +181,8 @@ export async function generateTravelReply(params: {
 
   for (const model of modelCandidates()) {
     for (let attempt = 1; attempt <= ATTEMPTS_PER_MODEL; attempt += 1) {
+      // The retry after a truncated answer gets the larger budget.
+      const budget = attempt === 1 ? MAX_OUTPUT_TOKENS : MAX_OUTPUT_TOKENS_RETRY;
       try {
         const response = await ai.models.generateContent({
           model,
@@ -171,13 +190,44 @@ export async function generateTravelReply(params: {
           config: {
             systemInstruction: params.systemInstruction,
             temperature: 0.6,
-            maxOutputTokens: 900,
+            maxOutputTokens: budget,
+            // Reasoning is shared with the output budget. LOW keeps thinking
+            // out of the way of the actual travel answer while staying fast.
+            ...(supportsThinkingLevel(model)
+              ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+              : {}),
             abortSignal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           },
         });
 
         const text = response.text?.trim();
         const blocked = response.promptFeedback?.blockReason;
+        const finishReason = response.candidates?.[0]?.finishReason;
+
+        // The answer was cut off by the token budget, not finished by the model.
+        if (finishReason === FinishReason.MAX_TOKENS) {
+          if (attempt < ATTEMPTS_PER_MODEL) {
+            console.warn(
+              `AI: ${model} hit maxOutputTokens=${budget}, retrying with ${MAX_OUTPUT_TOKENS_RETRY}`,
+            );
+            continue;
+          }
+          if (text) {
+            console.warn(`AI: ${model} reply still truncated at maxOutputTokens=${budget}`);
+            resolvedModel = model;
+            return {
+              text,
+              model,
+              promptTokens: response.usageMetadata?.promptTokenCount ?? null,
+              completionTokens: response.usageMetadata?.candidatesTokenCount ?? null,
+            };
+          }
+          throw new GeminiFailure(
+            "empty_response",
+            `Gemini used the whole ${budget}-token budget before answering`,
+            true,
+          );
+        }
 
         if (!text) {
           if (blocked) {

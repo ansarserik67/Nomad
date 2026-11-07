@@ -186,7 +186,12 @@ message: 'new row violates row-level security policy for table "trips"'
 Причина: в базе включён RLS, но INSERT-политика для роли `authenticated` отсутствует или
 отличается от репозитория. Приложение отправляет `owner_id = auth.uid()`, так что дело не в коде.
 
-Лечение (идемпотентно, данные и RLS не трогаются):
+Лечение: `supabase/tools/rls-diagnose-and-repair.sql` в Supabase → SQL Editor, по шагам.
+Скрипт показывает реальные политики, воспроизводит INSERT с обычным пользователем
+(в транзакции с `rollback`, ничего не сохраняет) и пересоздаёт политики ровно в том
+виде, как в `init.sql`. RLS остаётся включённым, данные не удаляются.
+
+Минимальный вариант, если менять нужно только одну политику:
 
 ```sql
 drop policy if exists "trips_insert_owner" on public.trips;
@@ -197,6 +202,13 @@ with check (owner_id = (select auth.uid()));
 
 Если поездки не видны и после этого — проверьте, что существует SELECT-политика
 `trips_select_member` (она использует функцию `public.is_trip_member(id)` из `init.sql`).
+
+### 7.1а Планы/расходы не сохраняются, хотя поездки создаются
+
+Та же причина, только на `itinerary_items` / `expenses`: INSERT требует
+`public.can_edit_trip(trip_id)`, а эта функция опирается на `trip_role`, который
+считает владельцем `trips.owner_id`. Если функции в базе старее репозитория,
+владелец не распознаётся. Шаг 3 того же скрипта пересоздаёт и функции, и политики.
 
 ### 7.2 `?error=link` после Google
 

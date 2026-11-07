@@ -3,6 +3,8 @@ import { ArrowUpRight, Globe2, LockKeyhole, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Logo } from "@/components/brand/logo";
+import { LocaleSwitcher } from "@/components/locale/locale-switcher";
+import { ThemeSwitcher } from "@/components/theme/theme-switcher";
 import { Badge } from "@/components/ui/badge";
 import { getServerDictionary } from "@/lib/i18n/server";
 
@@ -31,6 +33,10 @@ export async function AuthShell({
           >
             {t.settings.setup}
           </Link>
+          <div className="flex items-center gap-0.5 sm:gap-1">
+            <ThemeSwitcher />
+            <LocaleSwitcher />
+          </div>
         </div>
       </header>
 

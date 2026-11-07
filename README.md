@@ -13,6 +13,10 @@ with live Frankfurter conversion, and the quota-controlled AI assistant.
 
 > **Setup guide (RU): [SETUP.md](./SETUP.md)** — environment variables, Supabase
 > migrations, Google OAuth configuration and troubleshooting.
+>
+> **Deploy guide (RU): [VERCEL.md](./VERCEL.md)** — publishing on Vercel:
+> environment variables, Supabase redirect URLs, production checklist and the
+> errors that actually show up after a first deploy.
 
 ---
 

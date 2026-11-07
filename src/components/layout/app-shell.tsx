@@ -348,7 +348,7 @@ export function AppShell({
                 </Link>
               ) : null}
 
-              <div className="relative" ref={menuRef}>
+              <div className="relative flex items-center gap-0.5 sm:gap-1" ref={menuRef}>
                 <ThemeSwitcher />
                 <LocaleSwitcher />
                 <div className="flex items-center gap-1">
